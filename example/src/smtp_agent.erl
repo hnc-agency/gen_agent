@@ -2,7 +2,7 @@
 -behavior(gen_agent).
 
 -export([start_link/2, start_link/3, run/1, run/2, stop/1]).
--export([init/1, sleep_time/2, handle_execute/1, handle_event/3, handle_command/4, terminate/3, code_change/4]).
+-export([init/1, sleep_time/2, handle_execute/1, handle_event/3, handle_command/4, terminate/3]).
 
 -record(data, {opts, mxs=undefined, host, hello, conn, caps=[], stage}).
 
@@ -150,9 +150,6 @@ terminate(R, S, D=#data{conn=Conn}) when Conn=/=undefined ->
 	terminate(R, S, D#data{conn=undefined});
 terminate(_R, _S, _D) ->
 	ok.
-
-code_change(_O, S, D, _E) ->
-	{ok, S, D}.
 
 get_mxs(Host) ->
 	lists:sort(inet_res:lookup(Host, in, mx)).

@@ -120,6 +120,7 @@
 	     State :: agent_state(),
 	     Data0 :: term(),
 	     Ignored :: term().
+-optional_callbacks([terminate/3]).
 
 -callback code_change(OldVsn, State0, Data0, Extra) -> Result
 	when OldVsn :: term() | {down, term()},
@@ -130,6 +131,7 @@
 	     State1 :: agent_state(),
 	     Data1 :: term(),
 	     Reason :: term().
+-optional_callbacks([code_change/4]).
 
 -define(TAG_I(Msg), {'$gen_agent', internal, Msg}).
 -define(TAG_C(Msg), {'$gen_agent', command, Msg}).
@@ -303,12 +305,22 @@ cancel_timer(Timer) ->
 	end.
 
 terminate(Reason, State, #data{cb_mod=CbMod, cb_state=CbState}) ->
-	CbMod:terminate(Reason, State, CbState).
+	case erlang:function_exported(CbMod, terminate, 3) of
+		true ->
+			CbMod:terminate(Reason, State, CbState);
+		false ->
+			ok
+	end.
 
 code_change(OldVsn, State, Data=#data{cb_mod=CbMod, cb_state=CbState0}, Extra) ->
-	case CbMod:code_change(OldVsn, State, CbState0, Extra) of
-		{ok, State, CbState1} ->
-			{ok, State, Data#data{cb_state=CbState1}};
-		Reason ->
-			Reason
+	case erlang:function_exported(CbMod, code_change, 4) of
+		true ->
+			case CbMod:code_change(OldVsn, State, CbState0, Extra) of
+				{ok, State, CbState1} ->
+					{ok, State, Data#data{cb_state=CbState1}};
+				Reason ->
+					Reason
+			end;
+		false ->
+			{ok, State, Data}
 	end.
