@@ -1,0 +1,9 @@
+.erlang.mk
+.gen_agent.plt
+*.d
+deps
+ebin
+ebin/test
+ebin/*.beam
+logs
+test/*.beam
