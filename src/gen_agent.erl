@@ -34,6 +34,10 @@
 -export([call/2, call/3]).
 -export([cast/2]).
 -export([reply/2]).
+-export([start_cmd_timer/2, start_cmd_timer/3, start_cmd_timer/4]).
+-export([send_cmd_after/2, send_cmd_after/3, send_cmd_after/4]).
+-export([cancel_cmd_timer/1]).
+-export([send_cmd/1, send_cmd/2]).
 -export([stop/1, stop/3]).
 
 -export([callback_mode/0, init/1, handle_event/4, terminate/3, code_change/4]).
@@ -105,7 +109,7 @@
 	     Reason :: term().
 
 -callback handle_command(EventType, Message, State, Data0) -> Result
-	when EventType :: {call, From} | cast | timeout,
+	when EventType :: {call, From} | cast | info | timeout,
 	     From :: from(),
 	     Message :: term(),
 	     State :: agent_state(),
@@ -266,6 +270,75 @@ cast(ServerRef, Msg) ->
 reply(From, Reply) ->
 	gen_statem:reply(From, Reply).
 
+-spec start_cmd_timer(Time, Message) -> TimerRef
+	when Time :: non_neg_integer(),
+	     Message :: term(),
+	     TimerRef :: reference().
+start_cmd_timer(Time, Msg) ->
+	start_cmd_timer(Time, self(), Msg).
+
+-spec start_cmd_timer(Time, Dest, Message) -> TimerRef
+	when Time :: non_neg_integer(),
+	     Dest :: pid() | atom(),
+	     Message :: term(),
+	     TimerRef :: reference().
+start_cmd_timer(Time, Dest, Msg) ->
+	start_cmd_timer(Time, Dest, Msg, []).
+
+-spec start_cmd_timer(Time, Dest, Message, Options) -> TimerRef
+	when Time :: non_neg_integer(),
+	     Dest :: pid() | atom(),
+	     Message :: term(),
+	     Options :: [Option],
+	     TimerRef :: reference(),
+	     Option :: {abs, boolean()}.
+start_cmd_timer(Time, Dest, Msg, Opts) ->
+	erlang:start_timer(Time, Dest, ?TAG_C(Msg), Opts).
+
+-spec send_cmd_after(Time, Message) -> TimerRef
+	when Time :: non_neg_integer(),
+	     Message :: term(),
+	     TimerRef :: reference().
+send_cmd_after(Time, Msg) ->
+	send_cmd_after(Time, self(), Msg).
+
+-spec send_cmd_after(Time, Dest, Message) -> TimerRef
+	when Time :: non_neg_integer(),
+	     Dest :: pid() | atom(),
+	     Message :: term(),
+	     TimerRef :: reference().
+send_cmd_after(Time, Dest, Msg) ->
+	send_cmd_after(Time, Dest, Msg, []).
+
+-spec send_cmd_after(Time, Dest, Message, Options) -> TimerRef
+	when Time :: non_neg_integer(),
+	     Dest :: pid() | atom(),
+	     Message :: term(),
+	     Options :: [Option],
+	     TimerRef :: reference(),
+	     Option :: {abs, boolean()}.
+send_cmd_after(Time, Dest, Msg, Opts) ->
+	erlang:send_after(Time, Dest, ?TAG_C(Msg), Opts).
+
+-spec cancel_cmd_timer(TimerRef) -> Result
+	when TimerRef :: reference(),
+	     Result :: Time | false,
+	     Time :: non_neg_integer().
+cancel_cmd_timer(TimerRef) ->
+	erlang:cancel_timer(TimerRef).
+
+-spec send_cmd(Message) -> Message
+	when Message :: term().
+send_cmd(Msg) ->
+	send_cmd(self(), Msg).
+
+-spec send_cmd(Dest, Message) -> Message
+	when Dest :: pid() | atom(),
+	     Message :: term().
+send_cmd(Dest, Msg) ->
+	Dest ! ?TAG_C(Msg),
+	Msg.
+
 -spec stop(ServerRef) -> ok
 	when ServerRef :: server_ref().
 stop(ServerRef) ->
@@ -331,8 +404,10 @@ handle_event(cast, ?TAG_C(Msg), State, Data=#data{cb_mod=CbMod, cb_state=CbState
 	handle_command_result(CbMod:handle_command(cast, Msg, State, CbState0), Data);
 handle_event(info, {timeout, Timer, ?TAG_C(Msg)}, State, Data=#data{cb_mod=CbMod, cb_state=CbState0, command_timer=Timer}) ->
 	handle_command_result(CbMod:handle_command(timeout, Msg, State, CbState0), Data#data{command_timer=undefined});
-handle_event(info, {timeout, _Timer, ?TAG_C(_Msg)}, _State, _Data) ->
-	keep_state_and_data;
+handle_event(info, {timeout, Timer, ?TAG_C(Msg)}, State, Data=#data{cb_mod=CbMod, cb_state=CbState0}) ->
+	handle_command_result(CbMod:handle_command(info, {timeout, Timer, Msg}, State, CbState0), Data);
+handle_event(info, ?TAG_C(Msg), State, Data=#data{cb_mod=CbMod, cb_state=CbState0}) ->
+	handle_command_result(CbMod:handle_command(info, Msg, State, CbState0), Data);
 handle_event(info, {timeout, Timer, ?TAG_I(Msg)}, executing, Data=#data{cb_mod=CbMod, cb_state=CbState0, event_timer=Timer}) ->
 	handle_execute_result(CbMod:handle_event(timeout, Msg, CbState0), Data#data{event_timer=undefined});
 handle_event(info, {timeout, _Timer, ?TAG_I(_Msg)}, executing, _Data) ->
