@@ -85,7 +85,7 @@
 	when EventType :: {call, From} | cast | info | timeout,
 	     From :: from(),
 	     Message :: term(),
-	     State :: agent_state(),
+	     State :: executing,
 	     Data0 :: term(),
 	     Result :: done
 		     | {done, Data1}
@@ -96,6 +96,21 @@
 		     | {repeat, Data1}
 		     | retry
 		     | {retry, Data1}
+		     | stop
+		     | {stop, Reason}
+		     | {stop, Reason, Data1},
+	     Data1 :: term(),
+	     Timeout :: timeout(),
+	     Reason :: term();
+    (EventType, Message, State, Data0) -> Result
+	when EventType :: {call, From} | cast | info | timeout,
+	     From :: from(),
+	     Message :: term(),
+	     State :: idle | sleeping,
+	     Data0 :: term(),
+	     Result::  continue
+		     | {continue, Data1}
+		     | {continue, Data1, Timeout}
 		     | stop
 		     | {stop, Reason}
 		     | {stop, Reason, Data1},
