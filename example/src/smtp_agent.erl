@@ -2,7 +2,7 @@
 -behavior(gen_agent).
 
 -export([start_link/2, start_link/3, run/1, run/2, stop/1]).
--export([init/1, sleep_time/2, handle_execute/1, handle_event/3, handle_command/4, terminate/3]).
+-export([init/1, sleep_time/2, handle_execute/1, handle_event/4, terminate/3]).
 
 -record(data, {opts, mxs=undefined, host, hello, conn, caps=[], stage}).
 
@@ -26,12 +26,12 @@ run(Agent) ->
 	run(Agent, infinity).
 
 run(Agent, Timeout) ->
-	gen_agent:perform(Agent),
-	gen_agent:wait(Agent, Timeout),
-	gen_agent:call_cmd(Agent, {retrieve, self()}).
+	ok=gen_agent:perform(Agent),
+	ok=gen_agent:wait(Agent, Timeout),
+	gen_agent:call(Agent, {retrieve, self()}).
 
 stop(Agent) ->
-	gen_agent:call_cmd(Agent, stop).
+	gen_agent:call(Agent, stop).
 
 init({Host, Hello, Opts}) ->
 	{ok, #data{opts=Opts, host=Host, hello=Hello}}.
@@ -60,17 +60,17 @@ handle_execute(D=#data{mxs=[{_, Mx}|Mxs]}) ->
 			{repeat, D#data{mxs=Mxs}}
 	end.
 
-handle_event(info, {SType, Sock, <<$2, _:2/bytes, $-, Cap/binary>>}, D=#data{conn=Conn={SType, Sock}, caps=Caps, stage=ehlo}) ->
+handle_event(info, {SType, Sock, <<$2, _:2/bytes, $-, Cap/binary>>}, executing, D=#data{conn=Conn={SType, Sock}, caps=Caps, stage=ehlo}) ->
 	activate(Conn),
 	{continue, D#data{caps=[uppercase(trim_crlf(Cap))|Caps]}};
-handle_event(info, {tcp, Sock, <<$2, _:2/bytes, _, Cap/binary>>}, D=#data{conn=Conn={tcp, Sock}, hello=Hello, caps=Caps, stage=ehlo}) ->
+handle_event(info, {tcp, Sock, <<$2, _:2/bytes, _, Cap/binary>>}, executing, D=#data{conn=Conn={tcp, Sock}, hello=Hello, caps=Caps, stage=ehlo}) ->
 	Caps1=tl(lists:reverse([uppercase(trim_crlf(Cap))|Caps])),
 	case lists:member(<<"STARTTLS">>, Caps1) of
 		true ->
 			send(Conn, <<"STARTTLS", $\r, $\n>>),
-			case recv(Conn) of
+			case gen_tcp:recv(Sock, 0) of
 				{ok, <<$2, _/binary>>} ->
-					application:ensure_all_started(ssl),
+					{ok, _}=application:ensure_all_started(ssl),
 					case ssl:connect(Sock, [{verify, verify_none}]) of
 						{ok, Sock1} ->
 							Conn1={ssl, Sock1},
@@ -90,13 +90,13 @@ handle_event(info, {tcp, Sock, <<$2, _:2/bytes, _, Cap/binary>>}, D=#data{conn=C
 		false ->
 			{done, D#data{caps=Caps1, stage=ready}}
 	end;
-handle_event(info, {ssl, Sock, <<$2, _:2/bytes, _, Cap/binary>>}, D=#data{conn={ssl, Sock}, caps=Caps, stage=ehlo}) ->
+handle_event(info, {ssl, Sock, <<$2, _:2/bytes, _, Cap/binary>>}, executing, D=#data{conn={ssl, Sock}, caps=Caps, stage=ehlo}) ->
 	Caps1=tl(lists:reverse([uppercase(trim_crlf(Cap))|Caps])),
 	{done, D#data{caps=Caps1, stage=ready}};
-handle_event(info, {SType, Sock, <<_:3/bytes, $-, _/binary>>}, #data{conn=Conn={SType, Sock}}) ->
+handle_event(info, {SType, Sock, <<_:3/bytes, $-, _/binary>>}, executing, #data{conn=Conn={SType, Sock}}) ->
 	activate(Conn),
 	continue;
-handle_event(info, {SType, Sock, <<$2, _/binary>>}, D=#data{conn=Conn={SType, Sock}, stage=Stage, hello=Hello}) ->
+handle_event(info, {SType, Sock, <<$2, _/binary>>}, executing, D=#data{conn=Conn={SType, Sock}, stage=Stage, hello=Hello}) ->
 	case Stage of
 		greeting ->
 			send(Conn, ["EHLO ", Hello, $\r, $\n]),
@@ -105,10 +105,10 @@ handle_event(info, {SType, Sock, <<$2, _/binary>>}, D=#data{conn=Conn={SType, So
 		helo ->
 			{done, D#data{stage=ready}}
 	end;
-handle_event(info, {SType, Sock, <<$4, _/binary>>}, D=#data{conn=Conn={SType, Sock}}) ->
+handle_event(info, {SType, Sock, <<$4, _/binary>>}, executing, D=#data{conn=Conn={SType, Sock}}) ->
 	close(Conn),
 	{repeat, D#data{conn=undefined, caps=[], stage=undefined}};
-handle_event(info, {SType, Sock, <<$5, _/binary>>}, D=#data{conn=Conn={SType, Sock}, stage=Stage, hello=Hello}) ->
+handle_event(info, {SType, Sock, <<$5, _/binary>>}, executing, D=#data{conn=Conn={SType, Sock}, stage=Stage, hello=Hello}) ->
 	case Stage of
 		greeting ->
 			close(Conn),
@@ -121,29 +121,30 @@ handle_event(info, {SType, Sock, <<$5, _/binary>>}, D=#data{conn=Conn={SType, So
 			close(Conn),
 			{repeat, D#data{conn=undefined, caps=[], stage=undefined}}
 	end;
-handle_event(info, {tcp_closed, Sock}, D=#data{conn={tcp, Sock}}) ->
+handle_event(info, {tcp_closed, Sock}, executing, D=#data{conn={tcp, Sock}}) ->
 	{repeat, D#data{conn=undefined, caps=[], stage=undefined}};
-handle_event(info, {tcp_error, Sock, _Error}, D=#data{conn=Conn={tcp, Sock}}) ->
+handle_event(info, {tcp_error, Sock, _Error}, executing, D=#data{conn=Conn={tcp, Sock}}) ->
 	close(Conn),
 	{repeat, D#data{conn=undefined, caps=[], stage=undefined}};
-handle_event(info, {ssl_closed, Sock}, D=#data{conn={ssl, Sock}}) ->
+handle_event(info, {ssl_closed, Sock}, executing, D=#data{conn={ssl, Sock}}) ->
 	{repeat, D#data{conn=undefined, caps=[], stage=undefined}};
-handle_event(info, {ssl_error, Sock, _Error}, D=#data{conn=Conn={ssl, Sock}}) ->
+handle_event(info, {ssl_error, Sock, _Error}, executing, D=#data{conn=Conn={ssl, Sock}}) ->
 	close(Conn),
-	{repeat, D#data{conn=undefined, caps=[], stage=undefined}}.
-
-handle_command({call, From}, {retrieve, _}, idle, #data{conn=undefined}) ->
+	{repeat, D#data{conn=undefined, caps=[], stage=undefined}};
+handle_event({call, From}, {retrieve, _}, idle, #data{conn=undefined}) ->
 	gen_agent:reply(From, error),
 	continue;
-handle_command({call, From}, {retrieve, CP}, idle, D=#data{conn=Conn, caps=Caps}) ->
+handle_event({call, From}, {retrieve, CP}, idle, D=#data{conn=Conn, caps=Caps}) ->
 	controlling_process(Conn, CP),
 	gen_agent:reply(From, {ok, Conn, Caps}),
 	{continue, D#data{conn=undefined, caps=[]}};
-handle_command({call, From}, stop, _S, _D) ->
+handle_event({call, From}, stop, _S, _D) ->
 	gen_agent:reply(From, ok),
 	stop;
-handle_command(_T, stop, _S, _D) ->
-	stop.
+handle_event(_T, stop, _S, _D) ->
+	stop;
+handle_event(_T, _M, _S, _D) ->
+	continue.
 
 terminate(R, S, D=#data{conn=Conn}) when Conn=/=undefined ->
 	close(Conn),
@@ -165,11 +166,6 @@ send({tcp, Sock}, Msg) ->
 	gen_tcp:send(Sock, Msg);
 send({ssl, Sock}, Msg) ->
 	ssl:send(Sock, Msg).
-
-recv({tcp, Sock}) ->
-	gen_tcp:recv(Sock, 0);
-recv({ssl, Sock}) ->
-	ssl:recv(Sock, 0).
 
 activate({tcp, Sock}) ->
 	inet:setopts(Sock, [{active, once}]);
