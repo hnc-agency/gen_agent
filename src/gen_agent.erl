@@ -140,7 +140,7 @@
 
 -record(data, {
 		cb_mod :: module(),
-		cb_state :: term(),
+		cb_data :: term(),
 		attempt=0 :: non_neg_integer(),
 		timer :: undefined | reference()
 	}).
@@ -253,61 +253,112 @@ stop(ServerRef) ->
 stop(ServerRef, Reason, Timeout) ->
 	gen_statem:stop(ServerRef, Reason, Timeout).
 
+%% @private
 -spec callback_mode() -> handle_event_function.
 callback_mode() ->
 	handle_event_function.
 
+%% @private
 -spec init({CbMod, CbArgs}) -> gen_statem:init_result(agent_state())
 	when CbMod :: module(),
 	     CbArgs :: term().
 init({CbMod, CbArgs}) ->
 	case CbMod:init(CbArgs) of
-		{ok, CbState} ->
-			{ok, idle, #data{cb_mod=CbMod, cb_state=CbState}};
+		{ok, CbData} ->
+			{ok, idle, #data{cb_mod=CbMod, cb_data=CbData}};
 		ignore ->
 			ignore;
 		Stop = {stop, _Reason} ->
 			Stop
 	end.
 
+%% @private
 -spec handle_event(EventType, Message, State, Data) -> gen_statem:event_handler_result(agent_state())
 	when EventType :: gen_statem:event_type(),
 	     Message :: ?TAG_I(term()) | term(),
 	     State :: agent_state(),
 	     Data :: #data{}.
 handle_event({call, From}, ?TAG_I(perform), idle, Data) ->
-	{next_state, sleeping, Data#data{attempt=0}, [{next_event, internal, enter}, {reply, From, ok}]};
+	{
+		next_state,
+		sleeping,
+		Data#data{attempt=0},
+		[
+			{next_event, internal, enter},
+			{reply, From, ok}
+		]
+	};
 handle_event({call, From}, ?TAG_I(perform), State, _Data) ->
-	{keep_state_and_data, [{reply, From, {error, State}}]};
+	{
+		keep_state_and_data,
+		[
+			{reply, From, {error, State}}
+		]
+	};
 handle_event({call, From}, ?TAG_I(wait), idle, _Data) ->
-	{keep_state_and_data, [{reply, From, ok}]};
+	{
+		keep_state_and_data,
+		[
+			{reply, From, ok}
+		]
+	};
 handle_event({call, _From}, ?TAG_I(wait), _State, _Data) ->
-	{keep_state_and_data, [postpone]};
-handle_event(internal, enter, sleeping, Data=#data{attempt=Attempt, cb_mod=CbMod, cb_state=CbState0}) ->
-	case CbMod:sleep_time(Attempt, CbState0) of
+	{
+		keep_state_and_data,
+		[
+			postpone
+		]
+	};
+handle_event(internal, enter, sleeping, Data=#data{attempt=Attempt, cb_mod=CbMod, cb_data=CbData0}) ->
+	case CbMod:sleep_time(Attempt, CbData0) of
 		{ok, Time} ->
-			{keep_state_and_data, [{state_timeout, Time, wakeup}]};
-		{ok, Time, CbState1} ->
-			{keep_state, Data#data{cb_state=CbState1}, [{state_timeout, Time, wakeup}]};
+			{
+				keep_state_and_data,
+				[
+					{state_timeout, Time, wakeup}
+				]
+			};
+		{ok, Time, CbData1} ->
+			{
+				keep_state,
+				Data#data{cb_data=CbData1},
+				[
+					{state_timeout, Time, wakeup}
+				]
+			};
 		stop ->
 			stop;
 		{stop, Reason} ->
-			{stop, Reason};
-		{stop, Reason, CbState1} ->
-			{stop, Reason, Data#data{cb_state=CbState1}}
+			{
+				stop,
+				Reason
+			};
+		{stop, Reason, CbData1} ->
+			{
+				stop,
+				Reason,
+				Data#data{cb_data=CbData1}
+			}
 	end;
 handle_event(state_timeout, wakeup, sleeping, Data) ->
-	{next_state, executing, Data, [{next_event, internal, enter}]};
-handle_event(internal, enter, executing, Data=#data{cb_mod=CbMod, cb_state=CbState0}) ->
-	handle_result(executing, CbMod:handle_execute(CbState0), Data);
-handle_event(info, {timeout, Timer, Msg}, executing, Data=#data{cb_mod=CbMod, cb_state=CbState0, timer=Timer}) ->
-	handle_result(executing, CbMod:handle_event(timeout, Msg, executing, CbState0), Data#data{timer=undefined});
-handle_event(info, {timeout, Timer, Msg}, State, Data=#data{cb_mod=CbMod, cb_state=CbState0, timer=Timer}) ->
-	handle_result(State, CbMod:handle_event(timeout, Msg, State, CbState0), Data#data{timer=undefined});
-handle_event(Event, Msg, executing, Data=#data{cb_mod=CbMod, cb_state=CbState0}) ->
-	handle_result(executing, CbMod:handle_event(Event, Msg, executing, CbState0), Data);
-handle_event(Event, Msg, State, Data=#data{cb_mod=CbMod, cb_state=CbState0}) ->
-	handle_result(State, CbMod:handle_event(Event, Msg, State, CbState0), Data);
+	{
+		next_state,
+		executing,
+		Data,
+		[
+			{next_event, internal, enter}
+		]
+	};
+handle_event(internal, enter, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
+	handle_result(executing, CbMod:handle_execute(CbData0), Data);
+handle_event(info, {timeout, Timer, Msg}, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0, timer=Timer}) ->
+	handle_result(executing, CbMod:handle_event(timeout, Msg, executing, CbData0), Data#data{timer=undefined});
+handle_event(info, {timeout, Timer, Msg}, State, Data=#data{cb_mod=CbMod, cb_data=CbData0, timer=Timer}) ->
+	handle_result(State, CbMod:handle_event(timeout, Msg, State, CbData0), Data#data{timer=undefined});
+handle_event(Event, Msg, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
+	handle_result(executing, CbMod:handle_event(Event, Msg, executing, CbData0), Data);
+handle_event(Event, Msg, State, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
+	handle_result(State, CbMod:handle_event(Event, Msg, State, CbData0), Data);
 handle_event(_Type, _Msg, _State, _Data) ->
 	keep_state_and_data.
 
@@ -324,45 +375,94 @@ handle_result(State, Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
 			ok
 	end,
 	handle_result(State, Result, Data#data{timer=undefined});
-handle_result(_State, {continue, CbState1, {Timeout, Msg}}, Data) ->
+handle_result(_State, {continue, CbData1, {Timeout, Msg}}, Data) ->
 	Timer=erlang:start_timer(Timeout, self(), Msg),
-	{keep_state, Data#data{cb_state=CbState1, timer=Timer}};
+	{
+		keep_state,
+		Data#data{cb_data=CbData1, timer=Timer}
+	};
 handle_result(_State, continue, _Data) ->
 	keep_state_and_data;
-handle_result(_State, {continue, CbState1}, Data) ->
-	{keep_state, Data#data{cb_state=CbState1}};
+handle_result(_State, {continue, CbData1}, Data) ->
+	{
+		keep_state,
+		Data#data{cb_data=CbData1}
+	};
 handle_result(_State, stop, _Data) ->
 	stop;
 handle_result(_State, {stop, Reason}, _Data) ->
-	{stop, Reason};
-handle_result(_State, {stop, Reason, CbState1}, Data) ->
-	{stop, Reason, Data#data{cb_state=CbState1}};
+	{
+		stop,
+		Reason
+	};
+handle_result(_State, {stop, Reason, CbData1}, Data) ->
+	{
+		stop,
+		Reason,
+		Data#data{cb_data=CbData1}
+	};
 handle_result(executing, done, Data) ->
-	{next_state, idle, Data};
-handle_result(executing, {done, CbState1}, Data) ->
-	{next_state, idle, Data#data{cb_state=CbState1}};
+	{
+		next_state,
+		idle,
+		Data
+	};
+handle_result(executing, {done, CbData1}, Data) ->
+	{
+		next_state,
+		idle,
+		Data#data{cb_data=CbData1}
+	};
 handle_result(executing, retry, Data=#data{attempt=Attempt}) ->
-	{next_state, sleeping, Data#data{attempt=Attempt+1}, [{next_event, internal, enter}]};
-handle_result(executing, {retry, CbState1}, Data=#data{attempt=Attempt}) ->
-	{next_state, sleeping, Data#data{cb_state=CbState1, attempt=Attempt+1}, [{next_event, internal, enter}]};
+	{
+		next_state,
+		sleeping,
+		Data#data{attempt=Attempt+1},
+		[
+			{next_event, internal, enter}
+		]
+	};
+handle_result(executing, {retry, CbData1}, Data=#data{attempt=Attempt}) ->
+	{
+		next_state,
+		sleeping,
+		Data#data{cb_data=CbData1, attempt=Attempt+1},
+		[
+			{next_event, internal, enter}
+		]
+	};
 handle_result(executing, repeat, Data) ->
-	{keep_state, Data, [{next_event, internal, enter}]};
-handle_result(executing, {repeat, CbState1}, Data) ->
-	{keep_state, Data#data{cb_state=CbState1}, [{next_event, internal, enter}]}.
+	{
+		keep_state,
+		Data,
+		[
+			{next_event, internal, enter}
+		]
+	};
+handle_result(executing, {repeat, CbData1}, Data) ->
+	{
+		keep_state,
+		Data#data{cb_data=CbData1},
+		[
+			{next_event, internal, enter}
+		]
+	}.
 
+%% @private
 -spec terminate(Reason, State, Data) -> Ignored
 	when Reason :: term(),
 	     State :: agent_state(),
 	     Data :: #data{},
 	     Ignored :: term().
-terminate(Reason, State, #data{cb_mod=CbMod, cb_state=CbState}) ->
+terminate(Reason, State, #data{cb_mod=CbMod, cb_data=CbData}) ->
 	case erlang:function_exported(CbMod, terminate, 3) of
 		true ->
-			CbMod:terminate(Reason, State, CbState);
+			CbMod:terminate(Reason, State, CbData);
 		false ->
 			ok
 	end.
 
+%% @private
 -spec code_change(OldVsn, State0, Data0, Extra) -> Result
 	when OldVsn :: term() | {down, term()},
 	     State0 :: agent_state(),
@@ -372,12 +472,12 @@ terminate(Reason, State, #data{cb_mod=CbMod, cb_state=CbState}) ->
 	     State1 :: agent_state(),
 	     Data1 :: term(),
 	     Reason :: term().
-code_change(OldVsn, State, Data=#data{cb_mod=CbMod, cb_state=CbState0}, Extra) ->
+code_change(OldVsn, State, Data=#data{cb_mod=CbMod, cb_data=CbData0}, Extra) ->
 	case erlang:function_exported(CbMod, code_change, 4) of
 		true ->
-			case CbMod:code_change(OldVsn, State, CbState0, Extra) of
-				{ok, State, CbState1} ->
-					{ok, State, Data#data{cb_state=CbState1}};
+			case CbMod:code_change(OldVsn, State, CbData0, Extra) of
+				{ok, State, CbData1} ->
+					{ok, State, Data#data{cb_data=CbData1}};
 				Reason ->
 					Reason
 			end;
