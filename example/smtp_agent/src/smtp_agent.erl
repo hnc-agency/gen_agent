@@ -1,7 +1,7 @@
 -module(smtp_agent).
 -behavior(gen_agent).
 
--export([start_link/2, start_link/3, run/1, run/2, stop/1]).
+-export([start_link/2, start_link/3, run/1, run/2]).
 -export([init/1, sleep_time/2, handle_execute/1, handle_event/4, terminate/3]).
 
 -record(data, {opts, mxs=undefined, host, hello, conn, caps=[], stage}).
@@ -26,12 +26,9 @@ run(Agent) ->
 	run(Agent, infinity).
 
 run(Agent, Timeout) ->
-	ok=gen_agent:perform(Agent),
-	ok=gen_agent:wait(Agent, Timeout),
+	ok=gen_agent:call(Agent, perform),
+	ok=gen_agent:wait(Agent, done, Timeout),
 	gen_agent:call(Agent, {retrieve, self()}).
-
-stop(Agent) ->
-	gen_agent:call(Agent, stop).
 
 init({Host, Hello, Opts}) ->
 	{ok, #data{opts=Opts, host=Host, hello=Hello}}.
@@ -131,18 +128,16 @@ handle_event(info, {ssl_closed, Sock}, executing, D=#data{conn={ssl, Sock}}) ->
 handle_event(info, {ssl_error, Sock, _Error}, executing, D=#data{conn=Conn={ssl, Sock}}) ->
 	close(Conn),
 	{repeat, D#data{conn=undefined, caps=[], stage=undefined}};
-handle_event({call, From}, {retrieve, _}, idle, #data{conn=undefined}) ->
-	gen_agent:reply(From, error),
-	continue;
-handle_event({call, From}, {retrieve, CP}, idle, D=#data{conn=Conn, caps=Caps}) ->
+handle_event({call, From}, perform, idle, _D) ->
+	gen_agent:reply(From, ok),
+	perform;
+handle_event({call, From}, {retrieve, CP}, done, D=#data{conn=Conn, caps=Caps}) when Conn=/=undefined ->
 	controlling_process(Conn, CP),
 	gen_agent:reply(From, {ok, Conn, Caps}),
-	{continue, D#data{conn=undefined, caps=[]}};
-handle_event({call, From}, stop, _S, _D) ->
-	gen_agent:reply(From, ok),
-	stop;
-handle_event(_T, stop, _S, _D) ->
-	stop;
+	{idle, D#data{conn=undefined, caps=[]}};
+handle_event({call, From}, _M, _S, _D) ->
+	gen_agent:reply(From, error),
+	continue;
 handle_event(_T, _M, _S, _D) ->
 	continue.
 

@@ -4,7 +4,7 @@
 -export([start_link/1, run/1, run/2]).
 -export([init/1, sleep_time/2, handle_execute/1, handle_event/4]).
 
--record(data, {opts, conn}).
+-record(data, {opts, tag, conn}).
 
 start_link(Opts) ->
 	gen_agent:start_link(?MODULE, Opts, []).
@@ -13,10 +13,11 @@ run(A) ->
 	run(A, infinity).
 
 run(A, Timeout) ->
-	ok=gen_agent:perform(A),
-	ok=gen_agent:wait(A, Timeout),
-	{ok, Conn}=gen_agent:call(A, retrieve),
+	{ok, Tag}=gen_agent:call(A, {perform, self()}),
+	ok=gen_agent:wait(A, done, Timeout),
+	{ok, Conn}=gen_agent:call(A, {retrieve, Tag}),
 	link(Conn),
+	ok=gen_agent:call(A, {release, Tag}),
 	{ok, Conn}.
 
 init(Opts) ->
@@ -41,12 +42,25 @@ handle_execute(D=#data{opts=Opts}) ->
 			retry
 	end.
 
-handle_event({call, From}, retrieve, idle, D=#data{conn=Conn}) when Conn=/=undefined ->
+handle_event({call, From}, {perform, Pid}, idle, D) ->
+	Tag=monitor(process, Pid),
+	gen_agent:reply(From, {ok, Tag}),
+	{perform, D#data{tag=Tag}};
+handle_event({call, From}, {retrieve, Tag}, done, #data{tag=Tag, conn=Conn}) ->
 	gen_agent:reply(From, {ok, Conn}),
+	continue;
+handle_event({call, From}, {release, Tag}, done, D=#data{tag=Tag, conn=Conn}) ->
+	demonitor(Tag, [flush]),
 	unlink(Conn),
-	{continue, D#data{conn=undefined}};
-handle_event({call, From}, retrieve, _S, _D) ->
+	gen_agent:reply(From, ok),
+	{idle, D#data{tag=undefined, conn=undefined}};
+handle_event(info, {'DOWN', Tag, process, _Pid, _Reason}, done, D=#data{tag=Tag, conn=Conn}) ->
+	mysql:stop(Conn),
+	{idle, D=#data{tag=undefined, conn=undefined}};
+handle_event(info, {'DOWN', Tag, process, _Pid, _Reason}, _State, D=#data{tag=Tag}) ->
+	{idle, D=#data{tag=undefined, conn=undefined}};
+handle_event({call, From}, _M, _S, _D) ->
 	gen_agent:reply(From, error),
 	continue;
-handle_event(_T, _M, _S, _D) ->
+handle_event(_E, _M, _S, _D) ->
 	continue.

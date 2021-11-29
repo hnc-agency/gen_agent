@@ -27,8 +27,7 @@
 -export([start/3, start/4]).
 -export([start_link/3, start_link/4]).
 -export([start_monitor/3, start_monitor/4]).
--export([perform/1]).
--export([wait/1, wait/2]).
+-export([wait/2, wait/3]).
 -export([call/2, call/3]).
 -export([cast/2]).
 -export([reply/2]).
@@ -38,17 +37,38 @@
 
 -type server_ref() :: gen_statem:server_ref().
 -type start_opt() :: gen_statem:start_opt().
--type start_ret() :: {ok, pid()} | ignore | {error, term()}.
--type start_mon_ret() :: {ok, {pid(), reference()}} | ignore | {error, term()}.
+-type start_ret() :: {ok, pid()}
+		   | ignore
+		   | {error, term()}.
+-type start_mon_ret() :: {ok, {pid(), reference()}}
+		       | ignore
+		       | {error, term()}.
 -type from() :: gen_statem:from().
--type agent_state() :: idle | sleeping | executing.
+-type agent_state() :: idle
+		     | sleeping
+		     | executing
+		     | done.
+-type instruction(Data1) :: idle
+			  | {idle, Data1}
+			  | done
+			  | {done, Data1}
+			  | continue
+			  | {continue, Data1}
+			  | {continue, Data1, {Time :: non_neg_integer(), TimeoutMessage :: term()}}
+			  | retry
+			  | {retry, Data1}
+			  | repeat
+			  | {repeat, Data1}
+			  | stop
+			  | {stop, Reason :: term()}
+			  | {stop, Reason :: term(), Data1}.
 
 -callback init(Args) -> Result
 	when Args :: term(),
-	     Result :: {ok, Data}
+	     Result :: {ok, InitialData}
 		     | ignore
 		     | {stop, Reason},
-	     Data :: term(),
+	     InitialData :: term(),
 	     Reason :: term().
 
 -callback sleep_time(Attempt, Data0) -> Result
@@ -65,58 +85,27 @@
 
 -callback handle_execute(Data0) -> Result
 	when Data0 :: term(),
-	     Result :: done
-		     | {done, Data1}
-		     | continue
-		     | {continue, Data1}
-		     | {continue, Data1, Timeout}
-		     | retry
-		     | {retry, Data1}
-		     | repeat
-		     | {repeat, Data1}
-		     | stop
-		     | {stop, Reason}
-		     | {stop, Reason, Data1},
-	     Data1 :: term(),
-	     Timeout :: timeout(),
-	     Reason :: term().
+	     Result :: instruction(Data1),
+	     Data1 :: term().
 
 -callback handle_event(EventType, Message, State, Data0) -> Result
 	when EventType :: {call, From} | cast | info | timeout,
 	     From :: from(),
 	     Message :: term(),
-	     State :: executing,
+	     State :: idle,
 	     Data0 :: term(),
-	     Result :: done
-		     | {done, Data1}
-		     | continue
-		     | {continue, Data1}
-		     | {continue, Data1, Timeout}
-		     | repeat
-		     | {repeat, Data1}
-		     | retry
-		     | {retry, Data1}
-		     | stop
-		     | {stop, Reason}
-		     | {stop, Reason, Data1},
-	     Data1 :: term(),
-	     Timeout :: timeout(),
-	     Reason :: term();
+	     Result :: perform
+		     | {perform, Data1}
+		     | instruction(Data1),
+	     Data1 :: term();
     (EventType, Message, State, Data0) -> Result
 	when EventType :: {call, From} | cast | info | timeout,
 	     From :: from(),
 	     Message :: term(),
-	     State :: idle | sleeping,
+	     State :: sleeping | executing | done,
 	     Data0 :: term(),
-	     Result::  continue
-		     | {continue, Data1}
-		     | {continue, Data1, Timeout}
-		     | stop
-		     | {stop, Reason}
-		     | {stop, Reason, Data1},
-	     Data1 :: term(),
-	     Timeout :: timeout(),
-	     Reason :: term().
+	     Result :: instruction(Data1),
+	     Data1 :: term().
 
 -callback terminate(Reason, State, Data0) -> Ignored
 	when Reason :: term(),
@@ -136,7 +125,7 @@
 	     Reason :: term().
 -optional_callbacks([code_change/4]).
 
--define(TAG_I(Msg), {'$gen_agent', internal, Msg}).
+-define(TAG_I(Msg), {'$gen_agent_internal', Msg}).
 
 -record(data, {
 		cb_mod :: module(),
@@ -196,23 +185,18 @@ start_monitor(Module, Args, Opts) ->
 start_monitor(ServerName, Module, Args, Opts) ->
 	gen_statem:start_monitor(ServerName, ?MODULE, {Module, Args}, Opts).
 
--spec perform(ServerRef) -> Result
+-spec wait(ServerRef, State) -> ok
 	when ServerRef :: server_ref(),
-	     Result :: ok | {error, Reason},
-	     Reason :: term().
-perform(ServerRef) ->
-	call(ServerRef, ?TAG_I(perform)).
+	     State :: agent_state().
+wait(ServerRef, State) ->
+	wait(ServerRef, State, infinity).
 
--spec wait(ServerRef) -> ok
-	when ServerRef :: server_ref().
-wait(ServerRef) ->
-	wait(ServerRef, infinity).
-
--spec wait(ServerRef, Timeout) -> ok
+-spec wait(ServerRef, State, Timeout) -> ok
 	when ServerRef :: server_ref(),
+	     State :: agent_state(),
 	     Timeout :: timeout().
-wait(ServerRef, Timeout) ->
-	call(ServerRef, ?TAG_I(wait), Timeout).
+wait(ServerRef, State, Timeout) ->
+	call(ServerRef, ?TAG_I({wait, State}), Timeout).
 
 -spec call(ServerRef, Message) -> Reply
 	when ServerRef :: server_ref(),
@@ -278,31 +262,14 @@ init({CbMod, CbArgs}) ->
 	     Message :: ?TAG_I(term()) | term(),
 	     State :: agent_state(),
 	     Data :: #data{}.
-handle_event({call, From}, ?TAG_I(perform), idle, Data) ->
-	{
-		next_state,
-		sleeping,
-		Data#data{attempt=0},
-		[
-			{next_event, internal, enter},
-			{reply, From, ok}
-		]
-	};
-handle_event({call, From}, ?TAG_I(perform), State, _Data) ->
-	{
-		keep_state_and_data,
-		[
-			{reply, From, {error, State}}
-		]
-	};
-handle_event({call, From}, ?TAG_I(wait), idle, _Data) ->
+handle_event({call, From}, ?TAG_I({wait, State}), State, _Data) ->
 	{
 		keep_state_and_data,
 		[
 			{reply, From, ok}
 		]
 	};
-handle_event({call, _From}, ?TAG_I(wait), _State, _Data) ->
+handle_event({call, _From}, ?TAG_I({wait, _OtherState}), _State, _Data) ->
 	{
 		keep_state_and_data,
 		[
@@ -352,15 +319,15 @@ handle_event(state_timeout, wakeup, sleeping, Data) ->
 		]
 	};
 handle_event(internal, enter, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
-	handle_result(CbMod:handle_execute(CbData0), Data);
+	handle_result(executing, CbMod:handle_execute(CbData0), Data);
 handle_event(info, {timeout, Timer, Msg}, State, Data=#data{cb_mod=CbMod, cb_data=CbData0, timer=Timer}) ->
-	handle_result(CbMod:handle_event(timeout, Msg, State, CbData0), Data#data{timer=undefined});
+	handle_result(State, CbMod:handle_event(timeout, Msg, State, CbData0), Data#data{timer=undefined});
 handle_event(Event, Msg, State, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
-	handle_result(CbMod:handle_event(Event, Msg, State, CbData0), Data);
+	handle_result(State, CbMod:handle_event(Event, Msg, State, CbData0), Data);
 handle_event(_Type, _Msg, _State, _Data) ->
 	keep_state_and_data.
 
-handle_result(Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
+handle_result(State, Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
 	case erlang:cancel_timer(Timer) of
 		false ->
 			receive
@@ -372,46 +339,72 @@ handle_result(Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
 		_ ->
 			ok
 	end,
-	handle_result(Result, Data#data{timer=undefined});
-handle_result({continue, CbData1, {Timeout, Msg}}, Data) ->
-	Timer=erlang:start_timer(Timeout, self(), Msg),
+	handle_result(State, Result, Data#data{timer=undefined});
+handle_result(idle, perform, Data) ->
 	{
-		keep_state,
-		Data#data{cb_data=CbData1, timer=Timer}
+		next_state,
+		sleeping,
+		Data#data{attempt=0},
+		[{next_event, internal, enter}]
 	};
-handle_result(continue, _Data) ->
-	keep_state_and_data;
-handle_result({continue, CbData1}, Data) ->
+handle_result(idle, {perform, CbData1}, Data) ->
 	{
-		keep_state,
-		Data#data{cb_data=CbData1}
+		next_state,
+		sleeping,
+		Data#data{cb_data=CbData1, attempt=0},
+		[{next_event, internal, enter}]
 	};
-handle_result(stop, _Data) ->
-	stop;
-handle_result({stop, Reason}, _Data) ->
-	{
-		stop,
-		Reason
-	};
-handle_result({stop, Reason, CbData1}, Data) ->
-	{
-		stop,
-		Reason,
-		Data#data{cb_data=CbData1}
-	};
-handle_result(done, Data) ->
+handle_result(_State, idle, Data) ->
 	{
 		next_state,
 		idle,
 		Data
 	};
-handle_result({done, CbData1}, Data) ->
+handle_result(_State, {idle, CbData1}, Data) ->
 	{
 		next_state,
 		idle,
 		Data#data{cb_data=CbData1}
 	};
-handle_result(retry, Data=#data{attempt=Attempt}) ->
+handle_result(_State, continue, _Data) ->
+	keep_state_and_data;
+handle_result(_State, {continue, CbData1}, Data) ->
+	{
+		keep_state,
+		Data#data{cb_data=CbData1}
+	};
+handle_result(_State, {continue, CbData1, {Timeout, Msg}}, Data) ->
+	Timer=erlang:start_timer(Timeout, self(), Msg),
+	{
+		keep_state,
+		Data#data{cb_data=CbData1, timer=Timer}
+	};
+handle_result(_State, stop, _Data) ->
+	stop;
+handle_result(_State, {stop, Reason}, _Data) ->
+	{
+		stop,
+		Reason
+	};
+handle_result(_State, {stop, Reason, CbData1}, Data) ->
+	{
+		stop,
+		Reason,
+		Data#data{cb_data=CbData1}
+	};
+handle_result(_State, done, Data) ->
+	{
+		next_state,
+		done,
+		Data
+	};
+handle_result(_State, {done, CbData1}, Data) ->
+	{
+		next_state,
+		done,
+		Data#data{cb_data=CbData1}
+	};
+handle_result(_State, retry, Data=#data{attempt=Attempt}) ->
 	{
 		next_state,
 		sleeping,
@@ -420,7 +413,7 @@ handle_result(retry, Data=#data{attempt=Attempt}) ->
 			{next_event, internal, enter}
 		]
 	};
-handle_result({retry, CbData1}, Data=#data{attempt=Attempt}) ->
+handle_result(_State, {retry, CbData1}, Data=#data{attempt=Attempt}) ->
 	{
 		next_state,
 		sleeping,
@@ -429,7 +422,7 @@ handle_result({retry, CbData1}, Data=#data{attempt=Attempt}) ->
 			{next_event, internal, enter}
 		]
 	};
-handle_result(repeat, Data) ->
+handle_result(_State, repeat, Data) ->
 	{
 		keep_state,
 		Data,
@@ -437,7 +430,7 @@ handle_result(repeat, Data) ->
 			{next_event, internal, enter}
 		]
 	};
-handle_result({repeat, CbData1}, Data) ->
+handle_result(_State, {repeat, CbData1}, Data) ->
 	{
 		keep_state,
 		Data#data{cb_data=CbData1},

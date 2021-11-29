@@ -21,6 +21,6 @@ This will start an agent for obtaining a connection to one of `gmail.com`s MX ho
 ```
 
 This will start the process described above and hopefully return an `ok` tuple containing...
-*  `ConnType`: the connection type , either `tcp` or `ssl`
+* `ConnType`: the connection type , either `tcp` or `ssl`
 * `Sock`: the connected socket, with the process which called `run` as the controlling process
 * `Exts: the list of ESMTP extensions given by the server
