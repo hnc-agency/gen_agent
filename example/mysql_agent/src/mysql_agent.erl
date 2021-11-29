@@ -15,7 +15,9 @@ run(A) ->
 run(A, Timeout) ->
 	ok=gen_agent:perform(A),
 	ok=gen_agent:wait(A, Timeout),
-	gen_agent:call(A, retrieve).
+	{ok, Conn}=gen_agent:call(A, retrieve),
+	link(Conn),
+	{ok, Conn}.
 
 init(Opts) ->
 	process_flag(trap_exit, true),
