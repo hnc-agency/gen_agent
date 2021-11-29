@@ -76,7 +76,7 @@ This instruction is only allowed when the agent is in the `idle` state.
 
 See the `examples` directory for examples how `gen_agent` can be implemented and used.
 
-* The `mysql_agent` example is simple, it tries to obtain a connection to a MySQL database using [MySQL-OTP](https://github.com/mysql-otp/mysql-otp).
+* The `tcp_agent` example is simple, it tries to establish a TCP connection to a given host and port.
 * The `smtp_agent` example is more complex, as it not only involves connecting to a server but also some initial communication and possibly a socket upgrade to TLS.
 
 ## Authors
