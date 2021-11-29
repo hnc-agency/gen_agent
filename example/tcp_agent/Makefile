@@ -1,4 +1,4 @@
-PROJECT = tcp_example
+PROJECT = tcp_agent
 PROJECT_DESCRIPTION = gen_agent example tcp_agent
 PROJECT_VERSION = 0.1.0
 DEPS = gen_agent

@@ -36,7 +36,7 @@ init({Host, Hello, Opts}) ->
 sleep_time(N, #data{opts=#{max_attempts:=Max}}) when N+1>Max ->
 	{stop, {error, max_attempts}};
 sleep_time(N, #data{opts=#{delay:=D, backoff_time:=BT, backoff_exp:=BE, jitter:=J}}) ->
-	{ok, max(0, D+round(BT*math:pow(N, BE))+rand:uniform(J))}.
+	{ok, gen_agent:cooldown(N, D, BT, BE, J)}.
 
 handle_execute(D=#data{mxs=undefined, host=Host}) ->
 	case get_mxs(Host) of

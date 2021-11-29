@@ -32,8 +32,22 @@
 -export([cast/2]).
 -export([reply/2]).
 -export([stop/1, stop/3]).
+-export([cooldown/5]).
 
 -export([callback_mode/0, init/1, handle_event/4, terminate/3, code_change/4]).
+
+%% --- Internal ---
+
+-define(TAG_I(Msg), {'$gen_agent_internal', Msg}).
+
+-record(data, {
+		cb_mod :: module(),
+		cb_data :: term(),
+		attempt=0 :: non_neg_integer(),
+		timer :: undefined | reference()
+	}).
+
+%% --- Types ---
 
 -type server_ref() :: gen_statem:server_ref().
 -type start_opt() :: gen_statem:start_opt().
@@ -62,6 +76,8 @@
 			  | stop
 			  | {stop, Reason :: term()}
 			  | {stop, Reason :: term(), Data1}.
+
+%% --- Callbacks ---
 
 -callback init(Args) -> Result
 	when Args :: term(),
@@ -125,14 +141,7 @@
 	     Reason :: term().
 -optional_callbacks([code_change/4]).
 
--define(TAG_I(Msg), {'$gen_agent_internal', Msg}).
-
--record(data, {
-		cb_mod :: module(),
-		cb_data :: term(),
-		attempt=0 :: non_neg_integer(),
-		timer :: undefined | reference()
-	}).
+%% --- API ---
 
 -spec start(Module, Args, Opts) -> Result
 	when Module :: module(),
@@ -236,6 +245,32 @@ stop(ServerRef) ->
 	     Timeout :: timeout().
 stop(ServerRef, Reason, Timeout) ->
 	gen_statem:stop(ServerRef, Reason, Timeout).
+
+%% --- Convenience ---
+
+-spec cooldown(Attempt, Delay, Backoff, Growth, Jitter) -> Time
+	when Attempt :: non_neg_integer(),
+	     Delay :: integer(),
+	     Backoff :: number(),
+	     Growth :: number(),
+	     Jitter :: number(),
+	     Time :: non_neg_integer().
+cooldown(Attempt, Delay, Backoff, Growth, Jitter) ->
+	max(0, Delay + round(calc_backoff(Attempt, Backoff, Growth) + calc_jitter(Jitter))).
+
+calc_backoff(0, _Backoff, _Growth) ->
+	0;
+calc_backoff(_Attempt, Backoff, _Growth) when Backoff==0 ->
+	0;
+calc_backoff(Attempt, Backoff, Growth) ->
+	Backoff * math:pow(Growth, Attempt).
+
+calc_jitter(Jitter) when Jitter==0 ->
+	0;
+calc_jitter(Jitter) ->
+	rand:uniform() * Jitter.
+
+%% --- gen_statem ---
 
 %% @private
 -spec callback_mode() -> handle_event_function.

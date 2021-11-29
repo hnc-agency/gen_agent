@@ -61,7 +61,7 @@ This instruction is only allowed when the agent is in the `idle` state.
 * `retry`: The agent will increment the attempt counter, transition to the `sleeping` state, and retry after the respective backoff time has elapsed.
 * `{retry, NewData}`: The agent will update its data, increment the attempt counter, transition to the `sleeping` state, and retry after the respective backoff time has elapsed.
 
-## API
+## API functions
 
 * `start/3,4`: Starts a standalone agent which is not linked to the calling process. Will return the agent pid in an `ok` tuple, or fail.
 * `start_link/3,4`: Starts an agent which is linked to the calling process. Will return the agent pid in an `ok` tuple, or fail.
@@ -71,6 +71,10 @@ This instruction is only allowed when the agent is in the `idle` state.
 * `cast/2`: Send an asynchronous cast to the agent. Always returns `ok`.
 * `reply/2`: Reply to a message received via a synchronous call message. Always returns `ok`.
 * `stop/1,3`: Stops the agent with an optional reason and timeout. Will always return `ok`, or fail when the timeout expires.
+
+## Convenience functions
+
+* `cooldown/5`: Calculates a backoff time from the `Attempt` number, a constant `Delay`, a `Backoff` time which exponentially grows by `Growth`, and a random `Jitter`.
 
 ## Usage
 
