@@ -68,7 +68,7 @@
 			  | {done, Data1}
 			  | continue
 			  | {continue, Data1}
-			  | {continue, Data1, {Time :: non_neg_integer(), TimeoutMessage :: term()}}
+			  | {continue, Data1, {Timeout :: timeout(), TimeoutMessage :: term()}}
 			  | retry
 			  | {retry, Data1}
 			  | repeat
@@ -404,6 +404,11 @@ handle_result(_State, {idle, CbData1}, Data) ->
 handle_result(_State, continue, _Data) ->
 	keep_state_and_data;
 handle_result(_State, {continue, CbData1}, Data) ->
+	{
+		keep_state,
+		Data#data{cb_data=CbData1}
+	};
+handle_result(_State, {continue, CbData1, {infinity, _Msg}}, Data) ->
 	{
 		keep_state,
 		Data#data{cb_data=CbData1}
