@@ -22,36 +22,31 @@ The `handle_execute/1` and `handle_event/4` callbacks must return an instruction
 
 #### Continue
 
-* `continue`: The agent will continue in the same state, and with unchanged data.
+* `continue`: The agent will continue in the same state.
 * `{continue, NewData}`: The agent will update its data and continue in the same state.
-* `{continue, NewData, {Timeout, TimeoutMessage}}`: The agent will update its data and continue in the same state. If the given `Timeout` expires before another event occurs, an event of type `timeout` and the given `TimeoutMessage` is passed to `handle_event/4`.
+* `{continue, NewData, {Timeout, TimeoutMessage}}`: The agent will update its data and continue in the same state.
+  If the given `Timeout` expires before another event occurs, an event of type `timeout` and the given `TimeoutMessage` is passed to `handle_event/4`.
 
 #### Stop
 
-* `stop`: The agent will terminate with reason `normal` and unchanged data.
-* `{stop, Reason}`: The agent will terminate with the given reason and unchanged data.
+* `stop`: The agent will terminate with reason `normal`.
+* `{stop, Reason}`: The agent will terminate with the given reason.
 * `{stop, Reason, NewData}`: The agent will update its data and terminate with the given reason.
 
 #### Done
 
-This instruction must only be returned from `handle_execute/1`, or from `handle_event/4` when the agent is in the executing state.
-
-* `done`: The agent will transition to the idle state, with the same data.
+* `done`: The agent will transition to the idle state.
 * `{done, NewData}`: The agent will update its data and transition to the idle state.
 
 #### Repeat
 
-This instruction must only be returned from `handle_execute/1`, or from `handle_event/4` when the agent is in the executing state.
-
-* `repeat`: The agent will stay in the executing state and re-call `handle_execute/1`, with unchanged data.
-* `{repeat, NewData}`: The agent will stay in the executing state, update its data, and re-call `handle_execute/1`.
+* `repeat`: The agent will transition to the executing state and call `handle_execute/1`.
+* `{repeat, NewData}`: The agent will update its data, transition to the executing state, and call `handle_execute/1`.
 
 #### Retry
 
-This instruction must only be returned from `handle_execute/1`, or from `handle_event/4` when the agent is in the executing state.
-
-* `retry`: The agent will give up the current attempt and try again later, with unchanged data.
-* `{retry, NewData}`: The agent will give up the current attempt, update its data, and try again later.
+* `retry`: The agent will transition to the sleeping state.
+* `{retry, NewData}`: The agent will update its data and transition to the sleeping state.
 
 ## API
 

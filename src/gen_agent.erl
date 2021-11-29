@@ -309,6 +309,8 @@ handle_event({call, _From}, ?TAG_I(wait), _State, _Data) ->
 			postpone
 		]
 	};
+handle_event(_Event, ?TAG_I(_Msg), _State, _Data) ->
+	keep_state_and_data;
 handle_event(internal, enter, sleeping, Data=#data{attempt=Attempt, cb_mod=CbMod, cb_data=CbData0}) ->
 	case CbMod:sleep_time(Attempt, CbData0) of
 		{ok, Time} ->
@@ -350,19 +352,15 @@ handle_event(state_timeout, wakeup, sleeping, Data) ->
 		]
 	};
 handle_event(internal, enter, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
-	handle_result(executing, CbMod:handle_execute(CbData0), Data);
-handle_event(info, {timeout, Timer, Msg}, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0, timer=Timer}) ->
-	handle_result(executing, CbMod:handle_event(timeout, Msg, executing, CbData0), Data#data{timer=undefined});
+	handle_result(CbMod:handle_execute(CbData0), Data);
 handle_event(info, {timeout, Timer, Msg}, State, Data=#data{cb_mod=CbMod, cb_data=CbData0, timer=Timer}) ->
-	handle_result(State, CbMod:handle_event(timeout, Msg, State, CbData0), Data#data{timer=undefined});
-handle_event(Event, Msg, executing, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
-	handle_result(executing, CbMod:handle_event(Event, Msg, executing, CbData0), Data);
+	handle_result(CbMod:handle_event(timeout, Msg, State, CbData0), Data#data{timer=undefined});
 handle_event(Event, Msg, State, Data=#data{cb_mod=CbMod, cb_data=CbData0}) ->
-	handle_result(State, CbMod:handle_event(Event, Msg, State, CbData0), Data);
+	handle_result(CbMod:handle_event(Event, Msg, State, CbData0), Data);
 handle_event(_Type, _Msg, _State, _Data) ->
 	keep_state_and_data.
 
-handle_result(State, Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
+handle_result(Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
 	case erlang:cancel_timer(Timer) of
 		false ->
 			receive
@@ -374,46 +372,46 @@ handle_result(State, Result, Data=#data{timer=Timer}) when Timer=/=undefined ->
 		_ ->
 			ok
 	end,
-	handle_result(State, Result, Data#data{timer=undefined});
-handle_result(_State, {continue, CbData1, {Timeout, Msg}}, Data) ->
+	handle_result(Result, Data#data{timer=undefined});
+handle_result({continue, CbData1, {Timeout, Msg}}, Data) ->
 	Timer=erlang:start_timer(Timeout, self(), Msg),
 	{
 		keep_state,
 		Data#data{cb_data=CbData1, timer=Timer}
 	};
-handle_result(_State, continue, _Data) ->
+handle_result(continue, _Data) ->
 	keep_state_and_data;
-handle_result(_State, {continue, CbData1}, Data) ->
+handle_result({continue, CbData1}, Data) ->
 	{
 		keep_state,
 		Data#data{cb_data=CbData1}
 	};
-handle_result(_State, stop, _Data) ->
+handle_result(stop, _Data) ->
 	stop;
-handle_result(_State, {stop, Reason}, _Data) ->
+handle_result({stop, Reason}, _Data) ->
 	{
 		stop,
 		Reason
 	};
-handle_result(_State, {stop, Reason, CbData1}, Data) ->
+handle_result({stop, Reason, CbData1}, Data) ->
 	{
 		stop,
 		Reason,
 		Data#data{cb_data=CbData1}
 	};
-handle_result(executing, done, Data) ->
+handle_result(done, Data) ->
 	{
 		next_state,
 		idle,
 		Data
 	};
-handle_result(executing, {done, CbData1}, Data) ->
+handle_result({done, CbData1}, Data) ->
 	{
 		next_state,
 		idle,
 		Data#data{cb_data=CbData1}
 	};
-handle_result(executing, retry, Data=#data{attempt=Attempt}) ->
+handle_result(retry, Data=#data{attempt=Attempt}) ->
 	{
 		next_state,
 		sleeping,
@@ -422,7 +420,7 @@ handle_result(executing, retry, Data=#data{attempt=Attempt}) ->
 			{next_event, internal, enter}
 		]
 	};
-handle_result(executing, {retry, CbData1}, Data=#data{attempt=Attempt}) ->
+handle_result({retry, CbData1}, Data=#data{attempt=Attempt}) ->
 	{
 		next_state,
 		sleeping,
@@ -431,7 +429,7 @@ handle_result(executing, {retry, CbData1}, Data=#data{attempt=Attempt}) ->
 			{next_event, internal, enter}
 		]
 	};
-handle_result(executing, repeat, Data) ->
+handle_result(repeat, Data) ->
 	{
 		keep_state,
 		Data,
@@ -439,7 +437,7 @@ handle_result(executing, repeat, Data) ->
 			{next_event, internal, enter}
 		]
 	};
-handle_result(executing, {repeat, CbData1}, Data) ->
+handle_result({repeat, CbData1}, Data) ->
 	{
 		keep_state,
 		Data#data{cb_data=CbData1},
