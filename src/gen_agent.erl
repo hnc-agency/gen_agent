@@ -204,7 +204,11 @@ wait(ServerRef, State) ->
 	when ServerRef :: server_ref(),
 	     State :: agent_state(),
 	     Timeout :: timeout().
-wait(ServerRef, State, Timeout) ->
+wait(ServerRef, State, Timeout)
+	when State=:=idle;
+	     State=:=sleeping;
+	     State=:=executing;
+	     State=:=done ->
 	call(ServerRef, ?TAG_I({wait, State}), Timeout).
 
 -spec call(ServerRef, Message) -> Reply
@@ -255,7 +259,12 @@ stop(ServerRef, Reason, Timeout) ->
 	     Growth :: number(),
 	     Jitter :: number(),
 	     Time :: non_neg_integer().
-cooldown(Attempt, Delay, Backoff, Growth, Jitter) ->
+cooldown(Attempt, Delay, Backoff, Growth, Jitter)
+	when is_integer(Attempt), Attempt>=0,
+	     is_integer(Delay),
+	     is_number(Backoff),
+	     is_number(Growth),
+	     is_number(Jitter) ->
 	max(0, Delay + round(calc_backoff(Attempt, Backoff, Growth) + calc_jitter(Jitter))).
 
 calc_backoff(0, _Backoff, _Growth) ->
@@ -315,14 +324,14 @@ handle_event(_Event, ?TAG_I(_Msg), _State, _Data) ->
 	keep_state_and_data;
 handle_event(internal, enter, sleeping, Data=#data{attempt=Attempt, cb_mod=CbMod, cb_data=CbData0}) ->
 	case CbMod:sleep_time(Attempt, CbData0) of
-		{ok, Time} ->
+		{ok, Time} when is_integer(Time), Time>=0 ->
 			{
 				keep_state_and_data,
 				[
 					{state_timeout, Time, wakeup}
 				]
 			};
-		{ok, Time, CbData1} ->
+		{ok, Time, CbData1} when is_integer(Time), Time>=0 ->
 			{
 				keep_state,
 				Data#data{cb_data=CbData1},
@@ -413,7 +422,7 @@ handle_result(_State, {continue, CbData1, {infinity, _Msg}}, Data) ->
 		keep_state,
 		Data#data{cb_data=CbData1}
 	};
-handle_result(_State, {continue, CbData1, {Timeout, Msg}}, Data) ->
+handle_result(_State, {continue, CbData1, {Timeout, Msg}}, Data) when is_integer(Timeout), Timeout>=0 ->
 	Timer=erlang:start_timer(Timeout, self(), Msg),
 	{
 		keep_state,
