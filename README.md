@@ -2,7 +2,7 @@
 
 `gen_agent` is a behavior module to simplify resource fetching.
 
-Under the hood, `gen_agent` is a rather simple state machine, with only three states:
+Under the hood, `gen_agent` is a rather simple state machine, with only four states:
 * `idle`: The agent is ready to start its a task.
 * `sleeping`: The agent is waiting in backoff before starting another attempt at doing its task.
 * `executing`: The agent is performing its task.
