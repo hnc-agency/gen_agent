@@ -33,7 +33,7 @@ run(Agent, Timeout) ->
 init({Host, Hello, Opts}) ->
 	{ok, #data{opts=Opts, host=Host, hello=Hello}}.
 
-sleep_time(N, #data{opts=#{max_attempts:=Max}}) when N+1>Max ->
+sleep_time(N, #data{opts=#{max_attempts:=Max}}) when N>=Max ->
 	{stop, {error, max_attempts}};
 sleep_time(N, #data{opts=#{delay:=D, backoff_time:=BT, backoff_exp:=BE, jitter:=J}}) ->
 	{ok, gen_agent:cooldown(N, D, BT, BE, J)}.
