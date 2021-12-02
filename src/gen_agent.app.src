@@ -1,0 +1,11 @@
+{
+	application,
+	'gen_agent',
+	[
+		{description, "Generic agent behavior"},
+		{vsn, "0.0.1"},
+		{modules, ['gen_agent']},
+		{applications, [kernel, stdlib]},
+		{licenses, ["MIT"]}
+	]
+}.
