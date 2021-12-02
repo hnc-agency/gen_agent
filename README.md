@@ -25,8 +25,8 @@ The `handle_execute/1` and `handle_event/4` callbacks must return an instruction
 
 This instruction is only allowed when the agent is in the `idle` state.
 
-* `perform`: The agent will reset the attempt counter to `0`, transition to the `sleeping` state and start performing its task.
-* `{perform, NewData}`: The agent will update its data, reset the attempt counter to `0`, transition to the `sleeping` state and start performing its task.
+* `perform`: The agent will reset the attempt counter to `0`, transition to the `sleeping` state, wait for the time returned from the callback modules' `sleep_time/2` function, then transition to the `executing` state and start performing its task.
+* `{perform, NewData}`: The agent will update its data, reset the attempt counter to `0`, transition to the `sleeping` state, wait for the time returned from the callback modules' `sleep_time/2` function, then transition to the `executing` state and start performing its task.
 
 #### Idle
 
