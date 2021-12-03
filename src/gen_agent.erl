@@ -49,6 +49,7 @@
 
 %% --- Types ---
 
+-type server_name() :: gen_statem:server_name().
 -type server_ref() :: gen_statem:server_ref().
 -type start_opt() :: gen_statem:start_opt().
 -type start_ret() :: {ok, pid()}
@@ -152,7 +153,7 @@ start(Module, Args, Opts) ->
 	gen_statem:start(?MODULE, {Module, Args}, Opts).
 
 -spec start(ServerName, Module, Args, Opts) -> Result
-	when ServerName :: server_ref(),
+	when ServerName :: server_name(),
 	     Module :: module(),
 	     Args :: term(),
 	     Opts :: [start_opt()],
@@ -169,7 +170,7 @@ start_link(Module, Args, Opts) ->
 	gen_statem:start_link(?MODULE, {Module, Args}, Opts).
 
 -spec start_link(ServerName, Module, Args, Opts) -> Result
-	when ServerName :: server_ref(),
+	when ServerName :: server_name(),
 	     Module :: module(),
 	     Args :: term(),
 	     Opts :: [start_opt()],
@@ -186,7 +187,7 @@ start_monitor(Module, Args, Opts) ->
 	gen_statem:start_monitor(?MODULE, {Module, Args}, Opts).
 
 -spec start_monitor(ServerName, Module, Args, Opts) -> Result
-	when ServerName :: server_ref(),
+	when ServerName :: server_name(),
 	     Module :: module(),
 	     Args :: term(),
 	     Opts :: [start_opt()],
