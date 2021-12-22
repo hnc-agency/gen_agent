@@ -1,8 +1,15 @@
 # gen_agent
 
-`gen_agent` is a behavior module to simplify resource fetching.
+`gen_agent` is a behavior module to simplify interaction with unreliable external services.
 
-Under the hood, `gen_agent` is a rather simple state machine, with only four states:
+The primary use case is fetching resources, eg a connection to a remote database which may be temporarily down or overloaded: while the first connection attempt may fail, it may succeed when retried at a later time.
+It is not limited to resource fetching tasks, however, in fact most use cases that need some form of retrying can be modeled, like posting a message to your favorite social network and retrying if it happens to be down.
+
+`gen_agent` relieves users of the burden of implementing retry and backoff logic over and over again, and to focus on the actual interaction logic instead.
+
+## Internals
+
+Under the hood, `gen_agent` is a simplified state machine, with only four possible states:
 * `idle`: The agent is ready to start its a task.
 * `sleeping`: The agent is waiting in backoff before starting another attempt at doing its task.
 * `executing`: The agent is performing its task.
